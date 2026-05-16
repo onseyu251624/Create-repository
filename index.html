@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>나의 식단</title>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Noto Sans KR', sans-serif; background: #f8f7f4; color: #1a1a1a; }
+    button { cursor: pointer; font-family: inherit; }
+    button:hover { opacity: 0.85; }
+    input, textarea { font-family: inherit; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+
+const { useState, useEffect, Fragment } = React;
+
+const DEF_ING = ["소고기","돼지고기","닭고기","해산물","두부/달걀","채소","기타재료"];
+const DEF_COOK = ["구이","볶음","튀김","찜/조림","국/찌개","면류","밥/덮밥","카레","샐러드","빵/기타"];
+const MEALS = ["아침","점심","저녁"];
+const DAYS = ["월","화","수","목","금","토","일"];
+
+function getWeek(offset) {
+  const now = new Date();
+  const day = now.getDay();
+  const diff = now.getDate() - day + (day === 0 ? -6 : 1) + offset * 7;
+  const mon = new Date(now.getFullYear(), now.getMonth(), diff);
+  return Array.from({length:7}, (_,i) => { const d = new Date(mon); d.setDate(mon.getDate()+i); return d; });
+}
+
+function dkey(d) { return d.toISOString().split("T")[0]; }
+function fmt(d) { return `${d.getMonth()+1}/${d.getDate()}`; }
+function ld(k, def) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : def; } catch { return def; } }
+
+function App() {
+  const [tab, setTab] = useState("planner");
+  const [recipes, setRecipes] = useState(() => ld("r2", []));
+  const [fridge, setFridge] = useState(() => ld("f2", []));
+  const [mealPlan, setMealPlan] = useState(() => ld("m2", {}));
+  const [ingTags, setIngTags] = useState(() => ld("it2", DEF_ING));
+  const [cookTags, setCookTags] = useState(() => ld("ct2", DEF_COOK));
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [toast, setToast] = useState(null);
+
+  useEffect(() => { localStorage.setItem("r2", JSON.stringify(recipes)); }, [recipes]);
+  useEffect(() => { localStorage.setItem("f2", JSON.stringify(fridge)); }, [fridge]);
+  useEffect(() => { localStorage.setItem("m2", JSON.stringify(mealPlan)); }, [mealPlan]);
+  useEffect(() => { localStorage.setItem("it2", JSON.stringify(ingTags)); }, [ingTags]);
+  useEffect(() => { localStorage.setItem("ct2", JSON.stringify(cookTags)); }, [cookTags]);
+
+  const notify = (msg, type="success") => { setToast({msg,type}); setTimeout(()=>setToast(null),2500); };
+
+  const exportData = () => {
+    const blob = new Blob([JSON.stringify({recipes,fridge,mealPlan,ingTags,cookTags},null,2)], {type:"application/json"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "나의식단_백업.json";
+    a.click();
+    notify("백업 저장됐어요!");
+  };
+
+  const importData = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const d = JSON.parse(ev.target.result);
+        if (d.recipes) setRecipes(d.recipes);
+        if (d.fridge) setFridge(d.fridge);
+        if (d.mealPlan) setMealPlan(d.mealPlan);
+        if (d.ingTags) setIngTags(d.ingTags);
+        if (d.cookTags) setCookTags(d.cookTags);
+        notify("데이터 불러왔어요!");
+      } catch { notify("파일을 읽을 수 없어요", "error"); }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
+  return (
+    <div style={{minHeight:"100vh",background:"#f8f7f4"}}>
+      {toast && (
+        <div style={{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",color:"#fff",padding:"10px 24px",borderRadius:24,zIndex:9999,fontSize:14,fontWeight:600,boxShadow:"0 4px 20px rgba(0,0,0,.15)",background:toast.type==="error"?"#ef4444":"#22c55e",whiteSpace:"nowrap"}}>
+          {toast.msg}
+        </div>
+      )}
+      <header style={{background:"#fff",borderBottom:"1px solid #e5e5e5",padding:"0 12px",display:"flex",alignItems:"center",justifyContent:"space-between",height:52,position:"sticky",top:0,zIndex:100,gap:8}}>
+        <div style={{fontWeight:800,fontSize:14,whiteSpace:"nowrap"}}>🍳 나의 식단</div>
+        <div style={{display:"flex",gap:4}}>
+          <button onClick={exportData} style={{padding:"4px 8px",border:"1px solid #ddd",borderRadius:8,background:"#fff",fontSize:11,color:"#666",whiteSpace:"nowrap"}}>💾 백업</button>
+          <label style={{padding:"4px 8px",border:"1px solid #ddd",borderRadius:8,background:"#fff",fontSize:11,color:"#666",cursor:"pointer",whiteSpace:"nowrap"}}>
+            📂 복원<input type="file" accept=".json" onChange={importData} style={{display:"none"}} />
+          </label>
+        </div>
+        <nav style={{display:"flex",gap:2}}>
+          {[["planner","📅 식단"],["recipes","📖 레시피"],["fridge","🧊 냉장고"]].map(([k,l]) => (
+            <button key={k} onClick={()=>setTab(k)} style={{padding:"5px 8px",borderRadius:14,border:"none",fontSize:12,fontWeight:600,background:tab===k?"#1a1a1a":"transparent",color:tab===k?"#fff":"#666",whiteSpace:"nowrap"}}>{l}</button>
+          ))}
+        </nav>
+      </header>
+      <main style={{maxWidth:900,margin:"0 auto",padding:"16px 12px"}}>
+        {tab==="planner" && <Planner recipes={recipes} mealPlan={mealPlan} setMealPlan={setMealPlan} weekOffset={weekOffset} setWeekOffset={setWeekOffset} notify={notify} />}
+        {tab==="recipes" && <Recipes recipes={recipes} setRecipes={setRecipes} ingTags={ingTags} setIngTags={setIngTags} cookTags={cookTags} setCookTags={setCookTags} notify={notify} />}
+        {tab==="fridge" && <Fridge fridge={fridge} setFridge={setFridge} mealPlan={mealPlan} recipes={recipes} notify={notify} />}
+      </main>
+    </div>
+  );
+}
+
+function Planner({ recipes, mealPlan, setMealPlan, weekOffset, setWeekOffset, notify }) {
+  const [picker, setPicker] = useState(null);
+  const [search, setSearch] = useState("");
+  const [recipeModal, setRecipeModal] = useState(null);
+  const [suggestions, setSuggestions] = useState(null);
+  const [sugTarget, setSugTarget] = useState(null);
+
+  const w0 = getWeek(weekOffset);
+  const w1 = getWeek(weekOffset + 1);
+
+  const getMeal = (d, meal) => mealPlan[dkey(d)]?.[meal] || "";
+  const setMeal = (d, meal, val) => {
+    const k = dkey(d);
+    setMealPlan(p => ({...p, [k]: {...(p[k]||{}), [meal]: val}}));
+  };
+
+  const suggest = (d, meal) => {
+    if (!recipes.length) return notify("레시피를 먼저 추가해주세요!", "error");
+    const dayMeals = mealPlan[dkey(d)] || {};
+    const ws = dkey(w0[0]), we = dkey(w0[6]);
+    const usedWeek = new Set(Object.entries(mealPlan).filter(([dt])=>dt>=ws&&dt<=we).flatMap(([,m])=>Object.values(m)).filter(Boolean));
+    const todayIng = new Set(Object.values(dayMeals).map(n=>recipes.find(r=>r.name===n)?.ingTag).filter(Boolean));
+    const todayCook = new Set(Object.values(dayMeals).map(n=>recipes.find(r=>r.name===n)?.cookTag).filter(Boolean));
+    const freq = {};
+    Object.values(mealPlan).flatMap(m=>Object.values(m)).filter(Boolean).forEach(n=>{freq[n]=(freq[n]||0)+1;});
+    let cands = recipes.filter(r=>!usedWeek.has(r.name)&&!(r.ingTag&&todayIng.has(r.ingTag))&&!(r.cookTag&&todayCook.has(r.cookTag))).sort((a,b)=>(freq[a.name]||0)-(freq[b.name]||0));
+    if (!cands.length) cands = recipes.filter(r=>!usedWeek.has(r.name));
+    setSuggestions(cands.slice(0,3).map(r=>r.name));
+    setSugTarget({d,meal});
+  };
+
+  const renderWeek = (week, label) => (
+    <div style={{marginBottom:20}}>
+      <div style={{fontSize:12,fontWeight:700,color:"#888",marginBottom:6}}>{label} ({fmt(week[0])} ~ {fmt(week[6])})</div>
+      <div style={{display:"grid",gridTemplateColumns:"34px repeat(7,1fr)",gap:1,background:"#ddd",borderRadius:10,overflow:"hidden"}}>
+        <div style={{background:"#f0eeeb"}}></div>
+        {week.map((d,i) => (
+          <div key={i} style={{background:"#f0eeeb",padding:"5px 2px",textAlign:"center"}}>
+            <div style={{fontSize:11,fontWeight:700}}>{DAYS[i]}</div>
+            <div style={{fontSize:9,color:"#888"}}>{fmt(d)}</div>
+          </div>
+        ))}
+        {MEALS.map(meal => (
+          <Fragment key={meal}>
+            <div style={{background:"#f0eeeb",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:"#666",padding:2,writingMode:"horizontal-tb"}}>{meal}</div>
+            {week.map((d,i) => {
+              const val = getMeal(d, meal);
+              const recipe = recipes.find(r=>r.name===val);
+              return (
+                <div key={i} style={{background:"#fff",padding:2,minHeight:46,display:"flex",flexDirection:"column"}}>
+                  <div onClick={()=>{ if(val&&recipe){setRecipeModal(recipe);}else{setPicker({d,meal});setSearch("");} }}
+                    style={{flex:1,cursor:"pointer",padding:"2px 3px",display:"flex",alignItems:"center"}}>
+                    {val
+                      ? <span style={{fontSize:10,lineHeight:1.3,wordBreak:"keep-all",textDecoration:recipe?"underline":"none",color:"#1a1a1a"}}>{val}</span>
+                      : <span style={{fontSize:18,color:"#ddd",margin:"auto"}}>+</span>
+                    }
+                  </div>
+                  <div style={{display:"flex",justifyContent:"flex-end",gap:2,padding:"0 2px 2px"}}>
+                    {val && <button onClick={e=>{e.stopPropagation();setPicker({d,meal});setSearch("");}} style={{fontSize:9,border:"none",background:"transparent",padding:0,color:"#bbb"}}>✎</button>}
+                    <button onClick={e=>{e.stopPropagation();suggest(d,meal);}} style={{fontSize:10,border:"none",background:"transparent",padding:0,color:"#bbb"}}>✨</button>
+                  </div>
+                </div>
+              );
+            })}
+          </Fragment>
+        ))}
+      </div>
+    </div>
+  );
+
+  return (
+    <div>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+        <button onClick={()=>setWeekOffset(w=>w-2)} style={{padding:"6px 12px",borderRadius:8,border:"1px solid #ddd",background:"#fff",fontSize:13}}>← 이전</button>
+        <span style={{fontWeight:700,fontSize:12}}>{fmt(w0[0])} – {fmt(w1[6])}</span>
+        <button onClick={()=>setWeekOffset(w=>w+2)} style={{padding:"6px 12px",borderRadius:8,border:"1px solid #ddd",background:"#fff",fontSize:13}}>다음 →</button>
+      </div>
+      {renderWeek(w0, "이번주")}
+      {renderWeek(w1, "다음주")}
+
+      {recipeModal && (
+        <div onClick={()=>setRecipeModal(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",display:"flex",alignItems:"flex-end",justifyContent:"center",zIndex:1000}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:"20px 20px 0 0",padding:24,width:"100%",maxWidth:500,maxHeight:"80vh",overflowY:"auto"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+              <h2 style={{fontSize:20,fontWeight:800}}>{recipeModal.name}</h2>
+              <button onClick={()=>setRecipeModal(null)} style={{border:"none",background:"transparent",fontSize:22,color:"#aaa"}}>×</button>
+            </div>
+            <div style={{display:"flex",gap:6,marginBottom:14}}>
+              {recipeModal.ingTag && <span style={{fontSize:11,padding:"2px 8px",borderRadius:20,background:"#f0fdf4",color:"#16a34a",fontWeight:600}}>{recipeModal.ingTag}</span>}
+              {recipeModal.cookTag && <span style={{fontSize:11,padding:"2px 8px",borderRadius:20,background:"#dbeafe",color:"#1d4ed8",fontWeight:600}}>{recipeModal.cookTag}</span>}
+            </div>
+            {recipeModal.ingredients && <><div style={{fontSize:13,fontWeight:700,color:"#888",marginBottom:8}}>🥕 재료</div><p style={{fontSize:15,lineHeight:1.8,marginBottom:16,whiteSpace:"pre-wrap"}}>{recipeModal.ingredients}</p></>}
+            {recipeModal.memo && <><div style={{fontSize:13,fontWeight:700,color:"#888",marginBottom:8}}>💡 메모</div><p style={{fontSize:15,lineHeight:1.8,whiteSpace:"pre-wrap"}}>{recipeModal.memo}</p></>}
+          </div>
+        </div>
+      )}
+
+      {picker && (
+        <div onClick={()=>setPicker(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",display:"flex",alignItems:"flex-end",justifyContent:"center",zIndex:1000}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:"20px 20px 0 0",padding:20,width:"100%",maxWidth:500,maxHeight:"70vh",display:"flex",flexDirection:"column"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+              <div style={{fontSize:16,fontWeight:800}}>메뉴 선택</div>
+              <button onClick={()=>setPicker(null)} style={{border:"none",background:"transparent",fontSize:20,color:"#aaa"}}>×</button>
+            </div>
+            <input autoFocus value={search} onChange={e=>setSearch(e.target.value)}
+              placeholder="🔍 검색 또는 직접 입력 후 엔터"
+              style={{padding:"10px 12px",border:"1px solid #ddd",borderRadius:10,fontSize:14,outline:"none",marginBottom:8}}
+              onKeyDown={e=>{ if(e.key==="Enter"&&search.trim()){ setMeal(picker.d,picker.meal,search.trim()); setPicker(null); notify(`${search.trim()} 등록됐어요!`); }}}
+            />
+            {search.trim() && !recipes.find(r=>r.name===search.trim()) && (
+              <button onClick={()=>{ setMeal(picker.d,picker.meal,search.trim()); setPicker(null); notify(`${search.trim()} 등록됐어요!`); }}
+                style={{width:"100%",padding:"10px 14px",background:"#1a1a1a",color:"#fff",border:"none",borderRadius:10,fontSize:14,fontWeight:600,marginBottom:8,textAlign:"left"}}>
+                + "{search.trim()}" 직접 입력
+              </button>
+            )}
+            <div style={{overflowY:"auto",display:"flex",flexDirection:"column",gap:6}}>
+              {recipes.filter(r=>r.name.toLowerCase().includes(search.toLowerCase())).map((r,i) => (
+                <button key={i} onClick={()=>{ setMeal(picker.d,picker.meal,r.name); setPicker(null); notify(`${r.name} 등록됐어요!`); }}
+                  style={{padding:"12px 14px",background:"#f8f7f4",border:"1px solid #eee",borderRadius:10,textAlign:"left",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <span style={{fontWeight:600,fontSize:14}}>{r.name}</span>
+                  <div style={{display:"flex",gap:4}}>
+                    {r.ingTag && <span style={{fontSize:10,padding:"2px 6px",borderRadius:20,background:"#f0fdf4",color:"#16a34a",fontWeight:600}}>{r.ingTag}</span>}
+                    {r.cookTag && <span style={{fontSize:10,padding:"2px 6px",borderRadius:20,background:"#dbeafe",color:"#1d4ed8",fontWeight:600}}>{r.cookTag}</span>}
+                  </div>
+                </button>
+              ))}
+            </div>
+            {getMeal(picker.d,picker.meal) && (
+              <button onClick={()=>{ setMeal(picker.d,picker.meal,""); setPicker(null); notify("비웠어요"); }}
+                style={{marginTop:10,padding:10,border:"1px solid #fca5a5",borderRadius:10,background:"#fff",fontSize:13,color:"#ef4444"}}>
+                🗑 비우기
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {suggestions && (
+        <div onClick={()=>{setSuggestions(null);setSugTarget(null);}} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.4)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:16,padding:24,width:300,maxWidth:"90vw"}}>
+            <div style={{fontSize:18,fontWeight:800,marginBottom:14}}>✨ 추천 메뉴</div>
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {suggestions.map(name => (
+                <button key={name} onClick={()=>{ if(sugTarget) setMeal(sugTarget.d,sugTarget.meal,name); setSuggestions(null); setSugTarget(null); notify(`${name} 등록됐어요!`); }}
+                  style={{padding:"12px 16px",background:"#f8f7f4",border:"1px solid #eee",borderRadius:10,textAlign:"left",fontSize:14,fontWeight:600}}>
+                  🍽 {name}
+                </button>
+              ))}
+            </div>
+            <button onClick={()=>{setSuggestions(null);setSugTarget(null);}} style={{marginTop:14,width:"100%",padding:10,border:"1px solid #ddd",borderRadius:8,background:"#fff",fontSize:14}}>닫기</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Recipes({ recipes, setRecipes, ingTags, setIngTags, cookTags, setCookTags, notify }) {
+  const [view, setView] = useState("list");
+  const [sel, setSel] = useState(null);
+  const [form, setForm] = useState({name:"",ingredients:"",ingTag:"",cookTag:"",memo:""});
+  const [newIng, setNewIng] = useState("");
+  const [newCook, setNewCook] = useState("");
+  const [search, setSearch] = useState("");
+
+  const reset = () => setForm({name:"",ingredients:"",ingTag:"",cookTag:"",memo:""});
+
+  const saveRecipe = () => {
+    if (!form.name.trim()) return notify("레시피 이름을 입력해주세요", "error");
+    if (sel !== null) { setRecipes(p=>p.map((r,i)=>i===sel?{...form}:r)); notify("수정됐어요!"); }
+    else { setRecipes(p=>[...p,{...form,id:Date.now()}]); notify("저장됐어요!"); }
+    reset(); setSel(null); setView("list");
+  };
+
+  const inp = {width:"100%",padding:"10px 12px",border:"1px solid #ddd",borderRadius:10,fontSize:14,outline:"none",boxSizing:"border-box"};
+  const lbl = {display:"block",fontSize:13,fontWeight:600,marginBottom:6,color:"#555"};
+
+  const filtered = recipes.filter(r =>
+    r.name.toLowerCase().includes(search.toLowerCase()) ||
+    (r.ingTag||"").includes(search) ||
+    (r.cookTag||"").includes(search) ||
+    (r.ingredients||"").toLowerCase().includes(search.toLowerCase())
+  );
+
+  if (view==="add"||view==="edit") return (
+    <div style={{maxWidth:540,margin:"0 auto"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+        <button onClick={()=>{setView("list");reset();setSel(null);}} style={{border:"none",background:"transparent",fontSize:14,color:"#666"}}>← 뒤로</button>
+        <h2 style={{fontSize:18,fontWeight:800}}>{view==="edit"?"레시피 수정":"새 레시피"}</h2>
+        <div style={{width:40}}></div>
+      </div>
+      <div style={{marginBottom:14}}>
+        <label style={lbl}>레시피 이름</label>
+        <input style={inp} value={form.name} placeholder="예: 된장찌개" onChange={e=>setForm(f=>({...f,name:e.target.value}))} />
+      </div>
+      <div style={{marginBottom:14}}>
+        <label style={lbl}>재료</label>
+        <textarea style={{...inp,resize:"vertical"}} rows={4} value={form.ingredients} placeholder="두부, 된장, 애호박, 파..." onChange={e=>setForm(f=>({...f,ingredients:e.target.value}))} />
+      </div>
+      {[[ingTags,setIngTags,"ingTag","재료 태그",newIng,setNewIng],[cookTags,setCookTags,"cookTag","조리법 태그",newCook,setNewCook]].map(([tags,setTags,k,l,nv,setNv]) => (
+        <div key={k} style={{marginBottom:14}}>
+          <label style={lbl}>{l}</label>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>
+            {tags.map(t => (
+              <div key={t} style={{display:"flex"}}>
+                <button onClick={()=>setForm(f=>({...f,[k]:f[k]===t?"":t}))}
+                  style={{padding:"6px 12px",border:"1px solid #ddd",borderRadius:"20px 0 0 20px",fontSize:12,background:form[k]===t?"#1a1a1a":"#fff",color:form[k]===t?"#fff":"#1a1a1a",minWidth:44}}>
+                  {t}
+                </button>
+                <button onClick={()=>{ setTags(p=>p.filter(x=>x!==t)); if(form[k]===t) setForm(f=>({...f,[k]:""})); }}
+                  style={{padding:"6px 7px",border:"1px solid #ddd",borderLeft:"none",borderRadius:"0 20px 20px 0",fontSize:11,background:"#fff",color:"#aaa"}}>×</button>
+              </div>
+            ))}
+          </div>
+          <div style={{display:"flex",gap:6}}>
+            <input style={{flex:1,padding:"6px 10px",border:"1px solid #ddd",borderRadius:8,fontSize:13,outline:"none"}} value={nv} placeholder={`새 ${l} 추가`} onChange={e=>setNv(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter"&&nv.trim()){setTags(p=>[...p,nv.trim()]);setNv("");} }} />
+            <button onClick={()=>{ if(nv.trim()){setTags(p=>[...p,nv.trim()]);setNv("");} }} style={{padding:"6px 12px",background:"#f0f0f0",border:"none",borderRadius:8,fontSize:13}}>추가</button>
+          </div>
+        </div>
+      ))}
+      <div style={{marginBottom:14}}>
+        <label style={lbl}>메모</label>
+        <input style={inp} value={form.memo} placeholder="팁이나 변형 아이디어..." onChange={e=>setForm(f=>({...f,memo:e.target.value}))} />
+      </div>
+      <button onClick={saveRecipe} style={{width:"100%",padding:14,background:"#1a1a1a",color:"#fff",border:"none",borderRadius:12,fontSize:16,fontWeight:700}}>💾 저장</button>
+    </div>
+  );
+
+  if (view==="detail"&&sel!==null) {
+    const r = recipes[sel];
+    return (
+      <div style={{maxWidth:540,margin:"0 auto"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+          <button onClick={()=>setView("list")} style={{border:"none",background:"transparent",fontSize:14,color:"#666"}}>← 뒤로</button>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={()=>{setForm(r);setView("edit");}} style={{padding:"6px 12px",border:"1px solid #ddd",borderRadius:8,background:"#fff",fontSize:13}}>✏️ 수정</button>
+            <button onClick={()=>{setRecipes(p=>p.filter((_,i)=>i!==sel));notify("삭제됐어요");setView("list");}} style={{padding:"6px 12px",border:"1px solid #fca5a5",borderRadius:8,background:"#fff",fontSize:13,color:"#ef4444"}}>🗑 삭제</button>
+          </div>
+        </div>
+        <h2 style={{fontSize:22,fontWeight:800,marginBottom:10}}>{r.name}</h2>
+        <div style={{display:"flex",gap:6,marginBottom:16}}>
+          {r.ingTag && <span style={{fontSize:11,padding:"2px 8px",borderRadius:20,background:"#f0fdf4",color:"#16a34a",fontWeight:600}}>{r.ingTag}</span>}
+          {r.cookTag && <span style={{fontSize:11,padding:"2px 8px",borderRadius:20,background:"#dbeafe",color:"#1d4ed8",fontWeight:600}}>{r.cookTag}</span>}
+        </div>
+        {r.ingredients && <><div style={{fontSize:13,fontWeight:700,color:"#888",marginBottom:8}}>🥕 재료</div><p style={{fontSize:15,lineHeight:1.8,marginBottom:16,whiteSpace:"pre-wrap"}}>{r.ingredients}</p></>}
+        {r.memo && <><div style={{fontSize:13,fontWeight:700,color:"#888",marginBottom:8}}>💡 메모</div><p style={{fontSize:15,lineHeight:1.8,whiteSpace:"pre-wrap"}}>{r.memo}</p></>}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{display:"flex",gap:10,marginBottom:14}}>
+        <input style={{flex:1,padding:"10px 14px",borderRadius:10,border:"1px solid #ddd",fontSize:14,outline:"none"}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 이름, 재료, 태그 검색..." />
+        <button onClick={()=>{reset();setView("add");}} style={{padding:"10px 14px",background:"#1a1a1a",color:"#fff",border:"none",borderRadius:10,fontSize:14,fontWeight:600,whiteSpace:"nowrap"}}>+ 추가</button>
+      </div>
+      {filtered.length===0 ? (
+        <div style={{textAlign:"center",padding:"60px 20px",color:"#aaa"}}>
+          <div style={{fontSize:48,marginBottom:12}}>📖</div>
+          <p>레시피가 없어요!<br/>첫 레시피를 추가해보세요.</p>
+        </div>
+      ) : (
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:10}}>
+          {filtered.map((r,i) => (
+            <div key={i} onClick={()=>{setSel(i);setView("detail");}} style={{background:"#fff",borderRadius:12,padding:14,cursor:"pointer",border:"1px solid #eee"}}>
+              <div style={{fontWeight:700,fontSize:14,marginBottom:8}}>{r.name}</div>
+              <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+                {r.ingTag && <span style={{fontSize:10,padding:"2px 7px",borderRadius:20,background:"#f0fdf4",color:"#16a34a",fontWeight:600}}>{r.ingTag}</span>}
+                {r.cookTag && <span style={{fontSize:10,padding:"2px 7px",borderRadius:20,background:"#dbeafe",color:"#1d4ed8",fontWeight:600}}>{r.cookTag}</span>}
+              </div>
+              {r.memo && <div style={{fontSize:11,color:"#aaa",marginTop:6}}>{r.memo}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Fridge({ fridge, setFridge, mealPlan, recipes, notify }) {
+  const [subtab, setSubtab] = useState("fridge");
+  const [input, setInput] = useState("");
+
+  const add = () => {
+    const items = input.split(/[,，\s]+/).map(s=>s.trim()).filter(Boolean);
+    if (!items.length) return;
+    setFridge(p=>[...new Set([...p,...items])]);
+    setInput(""); notify(`추가됐어요!`);
+  };
+
+  const shoppingList = (() => {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const items = new Set();
+    Object.entries(mealPlan).forEach(([date,meals]) => {
+      const d = new Date(date); d.setHours(0,0,0,0);
+      if (d < today) return;
+      Object.values(meals).forEach(name => {
+        if (!name) return;
+        const recipe = recipes.find(r=>r.name===name);
+        if (recipe?.ingredients) {
+          recipe.ingredients.split(/[,，\n]+/).map(s=>s.trim()).filter(Boolean).forEach(i=>items.add(i));
+        }
+      });
+    });
+    return [...items];
+  })();
+
+  return (
+    <div>
+      <div style={{display:"flex",gap:8,marginBottom:18}}>
+        <button onClick={()=>setSubtab("fridge")} style={{flex:1,padding:10,borderRadius:10,border:"none",fontWeight:700,fontSize:14,background:subtab==="fridge"?"#1a1a1a":"#f0f0f0",color:subtab==="fridge"?"#fff":"#666"}}>🧊 냉장고</button>
+        <button onClick={()=>setSubtab("shopping")} style={{flex:1,padding:10,borderRadius:10,border:"none",fontWeight:700,fontSize:14,background:subtab==="shopping"?"#1a1a1a":"#f0f0f0",color:subtab==="shopping"?"#fff":"#666"}}>🛒 장보기</button>
+      </div>
+
+      {subtab==="fridge" && (
+        <div>
+          <div style={{display:"flex",gap:10,marginBottom:16}}>
+            <input style={{flex:1,padding:"10px 12px",border:"1px solid #ddd",borderRadius:10,fontSize:14,outline:"none"}} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()} placeholder="재료 입력 (쉼표로 여러 개)" />
+            <button onClick={add} style={{padding:"10px 14px",background:"#1a1a1a",color:"#fff",border:"none",borderRadius:10,fontSize:14,fontWeight:600}}>추가</button>
+          </div>
+          {fridge.length===0 ? (
+            <div style={{textAlign:"center",padding:"60px 20px",color:"#aaa"}}><div style={{fontSize:48,marginBottom:12}}>🧊</div><p>냉장고가 비어있어요!</p></div>
+          ) : (
+            <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+              {fridge.map(item => (
+                <div key={item} style={{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",background:"#fff",border:"1px solid #e5e5e5",borderRadius:20,fontSize:14}}>
+                  <span>{item}</span>
+                  <button onClick={()=>setFridge(p=>p.filter(i=>i!==item))} style={{border:"none",background:"transparent",fontSize:16,color:"#aaa",lineHeight:1,padding:0}}>×</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {subtab==="shopping" && (
+        <div>
+          <div style={{fontSize:13,color:"#888",marginBottom:14}}>오늘부터 앞으로 먹을 식단 기준 재료예요</div>
+          {shoppingList.length===0 ? (
+            <div style={{textAlign:"center",padding:"60px 20px",color:"#aaa"}}><div style={{fontSize:48,marginBottom:12}}>🛒</div><p>앞으로의 식단을 먼저 등록해주세요!</p></div>
+          ) : (
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {shoppingList.map((item,i) => (
+                <div key={i} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",background:"#fff",border:"1px solid #eee",borderRadius:12,fontSize:14}}>
+                  <span>☐</span><span>{item}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
